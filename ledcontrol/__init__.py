@@ -2,6 +2,7 @@
 # Copyright 2022 jackw01. Released under the MIT License (see LICENSE for details).
 
 import argparse
+import os
 from ledcontrol.app import create_app
 
 def main():
@@ -34,11 +35,41 @@ def main():
                         help='Enable sACN / E1.31 support. Default: False')
     parser.add_argument('--hap', action='store_true',
                         help='Enable HomeKit Accessory Protocol support. Default: False')
+    parser.add_argument('--mqtt_host',
+                        help='Enable MQTT / Home Assistant support and connect to the broker at this host')
+    parser.add_argument('--mqtt_port', type=int, default=1883,
+                        help='MQTT broker port. Default: 1883')
+    parser.add_argument('--mqtt_user',
+                        help='MQTT username. Can also be set with the LEDCONTROL_MQTT_USER environment variable')
+    parser.add_argument('--mqtt_password',
+                        help='MQTT password. Prefer the LEDCONTROL_MQTT_PASSWORD environment variable, '
+                             'since command line arguments are visible to other users')
+    parser.add_argument('--mqtt_tls', action='store_true',
+                        help='Use TLS to connect to the MQTT broker. Default: False')
+    parser.add_argument('--mqtt_node_id',
+                        help='Name used to identify this device in MQTT and Home Assistant. Default: hostname')
+    parser.add_argument('--mqtt_topic_prefix',
+                        help='MQTT topic prefix. Default: ledcontrol/<node id>')
+    parser.add_argument('--mqtt_discovery_prefix', default='homeassistant',
+                        help='Home Assistant MQTT discovery prefix. Default: homeassistant')
     parser.add_argument('--no_timer_reset', action='store_true',
                         help='Do not reset the animation timer when patterns are changed. Default: False')
     parser.add_argument('--dev', action='store_true',
                         help='Development flag. Default: False')
     args = parser.parse_args()
+
+    mqtt_config = None
+    if args.mqtt_host:
+        mqtt_config = {
+            'host': args.mqtt_host,
+            'port': args.mqtt_port,
+            'username': args.mqtt_user or os.environ.get('LEDCONTROL_MQTT_USER'),
+            'password': args.mqtt_password or os.environ.get('LEDCONTROL_MQTT_PASSWORD'),
+            'tls': args.mqtt_tls,
+            'node_id': args.mqtt_node_id,
+            'topic_prefix': args.mqtt_topic_prefix,
+            'discovery_prefix': args.mqtt_discovery_prefix,
+        }
 
     app = create_app(args.led_count,
                      args.config_file,
@@ -53,7 +84,8 @@ def main():
                      args.sacn,
                      args.hap,
                      args.no_timer_reset,
-                     args.dev)
+                     args.dev,
+                     mqtt_config)
 
     if args.dev:
         app.run(host=args.host, port=args.port)

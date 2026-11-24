@@ -36,6 +36,7 @@ requirements = [
     'RestrictedPython>=5.2',
     'sacn>=1.8.1',
     'HAP-python==4.4.0',
+    'paho-mqtt>=1.6.1',
     'pyopenssl==22.1.0',
     'numpy>=1.21.0',
     'pyserial>=3.5',

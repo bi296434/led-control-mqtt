@@ -11,6 +11,7 @@ from flask import Flask, render_template, request, jsonify
 from ledcontrol.animationcontroller import AnimationController
 from ledcontrol.ledcontroller import LEDController
 from ledcontrol.homekit import homekit_start
+from ledcontrol.mqtt_bridge import MQTTBridge
 
 import ledcontrol.pixelmappings as pixelmappings
 import ledcontrol.animationfunctions as animfunctions
@@ -30,7 +31,8 @@ def create_app(led_count,
                enable_sacn,
                enable_hap,
                no_timer_reset,
-               dev):
+               dev,
+               mqtt_config=None):
     app = Flask(__name__)
 
     # Create pixel mapping function
@@ -311,5 +313,10 @@ def create_app(led_count,
         hap_accessory.on.set_value(controller.get_settings()['on'])
         hap_accessory.brightness.set_value(controller.get_settings()['global_brightness'] * 100.0)
         hap_accessory.saturation.set_value(controller.get_settings()['global_saturation'] * 100.0)
+
+    if mqtt_config is not None:
+        mqtt_bridge = MQTTBridge(controller, functions, presets, led_count, mqtt_config)
+        mqtt_bridge.start()
+        atexit.register(mqtt_bridge.stop)
 
     return app

@@ -11,6 +11,7 @@
 * Supports pixel mapping for arbitrary 2D and 3D LED arrangements
 * Seamlessly supports HSV-to-RGBW and RGB-to-RGBW conversion for RGBW LED strips
 * Supports networked E1.31 sACN DMX control for music visualization through [LedFx](https://github.com/LedFx/LedFx)
+* MQTT support with Home Assistant auto-discovery: control brightness, color, patterns, palettes, presets, and group ranges from Home Assistant or any MQTT client
 
 ### Technical Details
 * Animation patterns are defined as Python functions that work similarly to fragment shaders
@@ -99,8 +100,13 @@ usage: ledcontrol [-h] [--port PORT] [--host HOST] [--led_count LED_COUNT]
                   [--led_dma_channel LED_DMA_CHANNEL]
                   [--led_pixel_order LED_PIXEL_ORDER]
                   [--led_brightness_limit LED_BRIGHTNESS_LIMIT]
-                  [--save_interval SAVE_INTERVAL] [--sacn] [--hap] [--no_timer_reset]
-                  [--dev] [--serial_port SERIAL_PORT]
+                  [--save_interval SAVE_INTERVAL] [--sacn] [--hap]
+                  [--mqtt_host MQTT_HOST] [--mqtt_port MQTT_PORT]
+                  [--mqtt_user MQTT_USER] [--mqtt_password MQTT_PASSWORD]
+                  [--mqtt_tls] [--mqtt_node_id MQTT_NODE_ID]
+                  [--mqtt_topic_prefix MQTT_TOPIC_PREFIX]
+                  [--mqtt_discovery_prefix MQTT_DISCOVERY_PREFIX]
+                  [--no_timer_reset] [--dev] [--serial_port SERIAL_PORT]
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -132,6 +138,27 @@ optional arguments:
                         Default: 60
   --sacn                Enable sACN / E1.31 support. Default: False
   --hap                 Enable HomeKit Accessory Protocol support. Default: False
+  --mqtt_host MQTT_HOST
+                        Enable MQTT / Home Assistant support and connect to
+                        the broker at this host
+  --mqtt_port MQTT_PORT
+                        MQTT broker port. Default: 1883
+  --mqtt_user MQTT_USER
+                        MQTT username. Can also be set with the
+                        LEDCONTROL_MQTT_USER environment variable
+  --mqtt_password MQTT_PASSWORD
+                        MQTT password. Prefer the LEDCONTROL_MQTT_PASSWORD
+                        environment variable, since command line arguments
+                        are visible to other users
+  --mqtt_tls            Use TLS to connect to the MQTT broker. Default: False
+  --mqtt_node_id MQTT_NODE_ID
+                        Name used to identify this device in MQTT and Home
+                        Assistant. Default: hostname
+  --mqtt_topic_prefix MQTT_TOPIC_PREFIX
+                        MQTT topic prefix. Default: ledcontrol/<node id>
+  --mqtt_discovery_prefix MQTT_DISCOVERY_PREFIX
+                        Home Assistant MQTT discovery prefix. Default:
+                        homeassistant
   --no_timer_reset      Do not reset the animation timer when patterns are
                         changed. Default: False
   --dev                 Development flag. Default: False
@@ -161,6 +188,54 @@ While sACN receiver mode is enabled, the LED refresh rate is determined by your 
 
 ### HomeKit Accessory Protocol Support (Experimental)
 The brightness and on/off state of LEDControl can be controlled through Apple HomeKit. Run LEDControl with the `--hap` command line flag and a setup code will be printed for manually pairing in the Apple Home app.
+
+### MQTT and Home Assistant Support
+LEDControl can be controlled over MQTT, and registers itself with [Home Assistant](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery) automatically. Install the client library (`pip3 install paho-mqtt`, already included when installing with `setup.py`) and point LEDControl at your broker:
+
+```
+sudo LEDCONTROL_MQTT_USER=homeassistant LEDCONTROL_MQTT_PASSWORD=secret \
+  ledcontrol --led_count 900 --led_pixel_order GRBW --mqtt_host 192.168.1.10
+```
+
+With a systemd service, put the two `LEDCONTROL_MQTT_*` variables in an `EnvironmentFile=` instead of the command line. LEDControl keeps working normally if the broker is unreachable and connects as soon as it becomes available.
+
+#### What shows up in Home Assistant
+One device per LEDControl instance (named after the hostname, or `--mqtt_node_id`) with:
+
+| Entity | Controls |
+| --- | --- |
+| `Master` light | On/off and global brightness (the same controls as HomeKit) |
+| `Preset` select | Applies a preset saved in the web interface |
+| One light per group | Group brightness, color (hue/saturation), and animation pattern (as the light's effect) |
+| `<group> speed`, `<group> scale` | Pattern speed and scale |
+| `<group> first LED`, `<group> LED count` | The range of LEDs the group covers (use these to resize a segment) |
+| `<group> palette` select | Color palette used by palette-based patterns |
+
+Groups added, renamed, or deleted in the web interface appear, change, or disappear in Home Assistant, and changes made in the web interface or HomeKit are reflected in Home Assistant within a second.
+
+#### Things to know
+* **Color:** LEDControl has no single "color" setting, colors come from patterns and palettes. Setting a color from Home Assistant stores it in a two-color palette named `MQTT Color (<group name>)` and switches the group to the built-in `Static Color` pattern (unless a pattern is chosen in the same command). The palette appears in the web interface like any other custom palette. Hue/saturation are used, and brightness is controlled separately, so RGBW LEDs use their white channel for unsaturated colors.
+* **Group light on/off:** a group light is "off" when the group brightness is 0, and turning it on restores the previous brightness. It is independent of the `Master` light.
+* **Brightness limit:** if `--led_brightness_limit` is set, full brightness in Home Assistant corresponds to that limit.
+* **Range:** `first LED` changes only the start of the range. `LED count` sets the end of the range relative to the start.
+
+#### Topics
+`<prefix>` is `ledcontrol/<node id>` unless `--mqtt_topic_prefix` is set. Everything listed here can also be used directly without Home Assistant.
+
+| Topic | Payload |
+| --- | --- |
+| `<prefix>/status` | `online` / `offline` (retained) |
+| `<prefix>/settings/set` | JSON in the same format as `POST /updatesettings`, e.g. `{"global_brightness": 0.5}` or `{"groups": {"main": {"speed": 0.3}}}` |
+| `<prefix>/settings/state` | All settings as JSON (retained) |
+| `<prefix>/global/set`, `<prefix>/global/state` | Home Assistant JSON light format: `{"state": "ON", "brightness": 128}` |
+| `<prefix>/preset/set` | Name of a preset |
+| `<prefix>/group/<group>/set`, `.../state` | JSON light format: `{"state": "ON", "brightness": 200, "color": {"h": 120, "s": 100}, "effect": "Hue Cycle 1D"}` |
+| `<prefix>/group/<group>/<speed\|scale\|start\|length\|palette>/set`, `.../state` | Plain text value (palette by name) |
+
+`<group>` is the group's key (`main` for the default group), shown in the `group` topics and in `settings/state`. Brightness is 0-255, hue is 0-360, and saturation is 0-100.
+
+#### Security
+Anyone who can publish to the broker can control the LEDs, and `settings/set` accepts the same unvalidated input as the web API, so use a broker with authentication. Do not publish command topics with the retain flag set: the broker would deliver the stale command again on every reconnect.
 
 ### Pixel Mapping
 LEDControl supports pixel mapping, which allows 2- and 3-dimensional animation patterns to be mapped to any physical arrangement of LEDs. Currently, pixel mappings can only be specified with a JSON file containing an array of points representing the positions of each LED, using the `--pixel_mapping_json` command line argument. `--led_count` does not need to be specified when pixel mapping is used. The points must be in the same order that the correresponding LEDs are connected, and the units used to define the pixel mapping do not matter (negative and floating-point values are allowed).
