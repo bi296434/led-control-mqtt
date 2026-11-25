@@ -52,6 +52,22 @@ def main():
                         help='MQTT topic prefix. Default: ledcontrol/<node id>')
     parser.add_argument('--mqtt_discovery_prefix', default='homeassistant',
                         help='Home Assistant MQTT discovery prefix. Default: homeassistant')
+    parser.add_argument('--encoder', action='store_true',
+                        help='Enable a rotary encoder with push switch: turn for brightness, '
+                             'press to cycle through presets. Default: False')
+    parser.add_argument('--encoder_clk_pin', type=int, default=13,
+                        help='Encoder CLK (A) pin, BCM numbering. Default: 13')
+    parser.add_argument('--encoder_dt_pin', type=int, default=6,
+                        help='Encoder DT (B) pin, BCM numbering. Default: 6')
+    parser.add_argument('--encoder_sw_pin', type=int, default=5,
+                        help='Encoder push switch pin, BCM numbering. Default: 5')
+    parser.add_argument('--encoder_step', type=float, default=0.02,
+                        help='Brightness change per encoder click, as a fraction of the brightness limit. Default: 0.02')
+    parser.add_argument('--encoder_reverse', action='store_true',
+                        help='Swap the encoder turn direction. Default: False')
+    parser.add_argument('--encoder_edges', type=int, default=4, choices=[1, 2, 4],
+                        help='Encoder signal changes per click. Use 2 if only every second click of '
+                             'the knob has an effect. Default: 4')
     parser.add_argument('--no_timer_reset', action='store_true',
                         help='Do not reset the animation timer when patterns are changed. Default: False')
     parser.add_argument('--dev', action='store_true',
@@ -71,6 +87,17 @@ def main():
             'discovery_prefix': args.mqtt_discovery_prefix,
         }
 
+    encoder_config = None
+    if args.encoder:
+        encoder_config = {
+            'clk_pin': args.encoder_clk_pin,
+            'dt_pin': args.encoder_dt_pin,
+            'sw_pin': args.encoder_sw_pin,
+            'step': args.encoder_step,
+            'reverse': args.encoder_reverse,
+            'edges': args.encoder_edges,
+        }
+
     app = create_app(args.led_count,
                      args.config_file,
                      args.pixel_mapping_json,
@@ -85,7 +112,8 @@ def main():
                      args.hap,
                      args.no_timer_reset,
                      args.dev,
-                     mqtt_config)
+                     mqtt_config,
+                     encoder_config)
 
     if args.dev:
         app.run(host=args.host, port=args.port)

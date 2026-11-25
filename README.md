@@ -106,6 +106,11 @@ usage: ledcontrol [-h] [--port PORT] [--host HOST] [--led_count LED_COUNT]
                   [--mqtt_tls] [--mqtt_node_id MQTT_NODE_ID]
                   [--mqtt_topic_prefix MQTT_TOPIC_PREFIX]
                   [--mqtt_discovery_prefix MQTT_DISCOVERY_PREFIX]
+                  [--encoder] [--encoder_clk_pin ENCODER_CLK_PIN]
+                  [--encoder_dt_pin ENCODER_DT_PIN]
+                  [--encoder_sw_pin ENCODER_SW_PIN]
+                  [--encoder_step ENCODER_STEP] [--encoder_reverse]
+                  [--encoder_edges {1,2,4}]
                   [--no_timer_reset] [--dev] [--serial_port SERIAL_PORT]
 
 optional arguments:
@@ -159,6 +164,22 @@ optional arguments:
   --mqtt_discovery_prefix MQTT_DISCOVERY_PREFIX
                         Home Assistant MQTT discovery prefix. Default:
                         homeassistant
+  --encoder             Enable a rotary encoder with push switch: turn for
+                        brightness, press to cycle through presets. Default:
+                        False
+  --encoder_clk_pin ENCODER_CLK_PIN
+                        Encoder CLK (A) pin, BCM numbering. Default: 13
+  --encoder_dt_pin ENCODER_DT_PIN
+                        Encoder DT (B) pin, BCM numbering. Default: 6
+  --encoder_sw_pin ENCODER_SW_PIN
+                        Encoder push switch pin, BCM numbering. Default: 5
+  --encoder_step ENCODER_STEP
+                        Brightness change per encoder click, as a fraction of
+                        the brightness limit. Default: 0.02
+  --encoder_reverse     Swap the encoder turn direction. Default: False
+  --encoder_edges {1,2,4}
+                        Encoder signal changes per click. Use 2 if only every
+                        second click of the knob has an effect. Default: 4
   --no_timer_reset      Do not reset the animation timer when patterns are
                         changed. Default: False
   --dev                 Development flag. Default: False
@@ -188,6 +209,29 @@ While sACN receiver mode is enabled, the LED refresh rate is determined by your 
 
 ### HomeKit Accessory Protocol Support (Experimental)
 The brightness and on/off state of LEDControl can be controlled through Apple HomeKit. Run LEDControl with the `--hap` command line flag and a setup code will be printed for manually pairing in the Apple Home app.
+
+### Rotary Encoder
+A rotary encoder with a push switch (such as the KY-040) can control LEDControl directly from the Raspberry Pi. Turning clockwise raises the global brightness, turning counterclockwise lowers it, and pressing the knob loads the next preset, in the same order the presets are listed in the web interface (the first press loads the first one, and it wraps around after the last). Presets are saved in the web interface; the encoder only switches between them.
+
+Default wiring (BCM pin numbers, change them with the `--encoder_*_pin` flags):
+
+| Encoder pin | Raspberry Pi |
+| --- | --- |
+| `CLK` (A) | GPIO 13 |
+| `DT` (B) | GPIO 6 |
+| `SW` (switch) | GPIO 5 |
+| `GND` (or `-`) | Ground |
+| `+` (if the module has one) | **3.3V, not 5V** |
+
+The internal pull-up resistors are enabled, so no extra parts are needed. Modules with a `+` pin have their own pull-ups to that pin, and connecting it to 5V would put 5V on the GPIO pins, which are only rated for 3.3V.
+
+Run LEDControl with the `--encoder` flag. It needs the `RPi.GPIO` library, which is included with Raspberry Pi OS (`sudo apt install python3-rpi.gpio` if it is missing). If it can't be used, the encoder is skipped and LEDControl runs normally.
+
+* If it turns the wrong way, add `--encoder_reverse`.
+* If only every second click of the knob does something, add `--encoder_edges 2`.
+* `--encoder_step` sets the brightness change per click as a fraction of the brightness limit (`0.02` is 2%).
+* Turning down while the LEDs are off does nothing. Turning up while they are off switches them on.
+* Don't use the pin set with `--led_pin` (18 by default) for the encoder.
 
 ### MQTT and Home Assistant Support
 LEDControl can be controlled over MQTT, and registers itself with [Home Assistant](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery) automatically. Install the client library (`pip3 install paho-mqtt`, already included when installing with `setup.py`) and point LEDControl at your broker:

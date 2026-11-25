@@ -12,6 +12,7 @@ from ledcontrol.animationcontroller import AnimationController
 from ledcontrol.ledcontroller import LEDController
 from ledcontrol.homekit import homekit_start
 from ledcontrol.mqtt_bridge import MQTTBridge
+from ledcontrol.encoder import RotaryEncoder
 
 import ledcontrol.pixelmappings as pixelmappings
 import ledcontrol.animationfunctions as animfunctions
@@ -32,7 +33,8 @@ def create_app(led_count,
                enable_hap,
                no_timer_reset,
                dev,
-               mqtt_config=None):
+               mqtt_config=None,
+               encoder_config=None):
     app = Flask(__name__)
 
     # Create pixel mapping function
@@ -318,5 +320,17 @@ def create_app(led_count,
         mqtt_bridge = MQTTBridge(controller, functions, presets, led_count, mqtt_config)
         mqtt_bridge.start()
         atexit.register(mqtt_bridge.stop)
+
+    if encoder_config is not None:
+        # A problem with the encoder (missing RPi.GPIO, wrong pins) must not stop the LEDs
+        try:
+            pins = (encoder_config['clk_pin'], encoder_config['dt_pin'], encoder_config['sw_pin'])
+            if led_pin in pins:
+                raise ValueError(f'GPIO{led_pin} is the LED data pin and cannot be used for the encoder')
+            encoder = RotaryEncoder(controller, functions, presets, encoder_config)
+            encoder.start()
+            atexit.register(encoder.stop)
+        except Exception as e:
+            print(f'Rotary encoder not started: {e}')
 
     return app

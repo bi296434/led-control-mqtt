@@ -27,6 +27,8 @@ import time
 import traceback
 import zlib
 
+from ledcontrol.presets import apply_preset
+
 # How often settings are compared with what was last published. This is what keeps
 # Home Assistant up to date when settings are changed from the web UI or HomeKit.
 SYNC_INTERVAL = 1.0
@@ -35,9 +37,6 @@ SYNC_INTERVAL = 1.0
 # palettes created in the web UI use millisecond timestamps, so this range is free.
 COLOR_PALETTE_BASE = 1000000000
 COLOR_PALETTE_SPAN = 1000000000
-
-# Group settings a preset may change (the same fields the web UI saves in a preset)
-PRESET_FIELDS = ('brightness', 'color_temp', 'saturation', 'function', 'palette', 'scale', 'speed')
 
 SAFE_ID = re.compile(r'^[A-Za-z0-9_-]+$')
 
@@ -281,36 +280,8 @@ class MQTTBridge:
             self._controller.update_settings(delta)
 
     def _cmd_preset(self, name):
-        preset = self._presets.get(name)
-        if not isinstance(preset, dict):
+        if not apply_preset(self._controller, self._functions, self._presets, name):
             print(f'MQTT: unknown preset "{name}"')
-            return
-
-        # This is Store.loadPreset() from the web UI, done on the server
-        groups = self._snapshot()['groups']
-        palettes = self._controller.get_palettes()
-        delta = {}
-        for g, values in list(preset.items()):
-            if g not in groups or not isinstance(values, dict):
-                continue
-            d = {}
-            for k in PRESET_FIELDS:
-                if k not in values:
-                    continue
-                if k in ('function', 'palette'):
-                    d[k] = _int(values[k], 0)
-                else:
-                    v = _number(values[k])
-                    if v is not None:
-                        d[k] = v
-            # Presets can refer to patterns or palettes that have since been deleted
-            if 'function' in d and d['function'] not in self._functions:
-                d['function'] = 0
-            if 'palette' in d and d['palette'] not in palettes:
-                d['palette'] = 0
-            delta[g] = d
-        if delta:
-            self._controller.update_settings({'groups': delta})
 
     def _cmd_group_light(self, g, payload):
         group = self._snapshot()['groups'].get(g)
